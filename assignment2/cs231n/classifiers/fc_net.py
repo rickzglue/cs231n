@@ -198,7 +198,32 @@ class FullyConnectedNet(object):
         # beta2, etc. Scale parameters should be initialized to one and shift      #
         # parameters should be initialized to zero.                                #
         ############################################################################
-        pass
+        
+        num_hidden = len(hidden_dims)
+        dimensions = [input_dim] + hidden_dims
+
+        # initialize the L-1 relu hidden layers
+        #
+        for i in range(num_hidden):
+            dim1 = dimensions[i]
+            dim2 = dimensions[i+1]
+
+            Wi = "W"+str(i+1)
+            bi = "b"+str(i+1)
+
+            self.params[Wi] = np.random.normal( 0, weight_scale, (dim1, dim2) )
+            self.params[bi] = np.zeros( dim2 )
+            
+        # initialize the last affine softmax layer
+        #
+        Wl = "W"+str(num_hidden+1)
+        bl = "b"+str(num_hidden+1)
+
+        self.params[Wl] = np.random.normal( 0, weight_scale, (dimensions[num_hidden], num_classes) )
+        self.params[bl] = np.zeros( num_classes )
+
+        # FIXME - batch normalization and dropout
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -256,7 +281,29 @@ class FullyConnectedNet(object):
         # self.bn_params[1] to the forward pass for the second batch normalization #
         # layer, etc.                                                              #
         ############################################################################
-        pass
+        
+        num_hidden = self.num_layers-1
+
+        relu    = [None]*num_hidden
+        r_cache = [None]*num_hidden
+
+        # Hidden Layers
+        #
+        for i in range(num_hidden):
+            Wi = "W"+str(i+1)
+            bi = "b"+str(i+1)
+
+            if i==0: # First relu, interfaces with input X
+                relu[i], r_cache[i] = affine_relu_forward( X, self.params[Wi], self.params[bi] )
+            else:
+                relu[i], r_cache[i] = affine_relu_forward( relu[i-1], self.params[Wi], self.params[bi] )
+
+        # Softmax Affine Layer
+        #
+        Wl = "W"+str(num_hidden+1)
+        bl = "b"+str(num_hidden+1)
+        scores, s_cache = affine_forward( relu[num_hidden-1], self.params[Wl], self.params[bl] )
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -279,7 +326,53 @@ class FullyConnectedNet(object):
         # automated tests, make sure that your L2 regularization includes a factor #
         # of 0.5 to simplify the expression for the gradient.                      #
         ############################################################################
-        pass
+        reg = self.reg
+
+        # Loss Calculation
+        #
+        data_loss, dscores = softmax_loss(scores, y)
+        reg_loss = 0.5*reg*np.sum(self.params[Wl]**2)   # Softmax Regulation Loss
+        for i in range(num_hidden):
+            Wi = "W"+str(i+1)
+            reg_loss += 0.5*reg*np.sum(self.params[Wi]**2)   # Relu Regulation Loss
+
+        loss = data_loss + reg_loss
+
+        # Gradients
+        #
+        drelu = [None]*num_hidden
+        dW    = [None]*num_hidden
+        db    = [None]*num_hidden
+        
+        # Softmax gradient
+        #
+        dreluL, dWl, dbl = affine_backward(dscores, s_cache)
+        dWl += reg*self.params[Wl]
+
+        # Relu Gradients (note, i0 is the input relu layer, so drelu[0] = dX)
+        #
+        for i in reversed(range(num_hidden)):
+            if i==(num_hidden-1): # last relu receives data from SM affine
+                drelu[i], dW[i], db[i] = affine_relu_backward( dreluL, r_cache[i] )
+            else:
+                drelu[i], dW[i], db[i] = affine_relu_backward( drelu[i+1], r_cache[i] )
+
+            # regularization weight
+            #
+            Wi = "W"+str(i+1)
+            dW[i] += reg*self.params[Wi]
+
+        # Store gradients in grads
+        #
+        for i in range(num_hidden):
+            Wi = "W"+str(i+1)
+            bi = "b"+str(i+1)
+            grads[Wi] = dW[i]
+            grads[bi] = db[i]
+
+        grads[Wl] = dWl
+        grads[bl] = dbl
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
