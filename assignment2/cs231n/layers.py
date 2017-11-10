@@ -190,7 +190,64 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # variance, storing your result in the running_mean and running_var   #
         # variables.                                                          #
         #######################################################################
-        pass
+        
+        sample_mean = np.mean( x, axis=0 ).T # shape D
+        sample_var  = np.var( x, axis=0 ).T #shape D
+
+        running_mean = momentum*running_mean + (1-momentum)*sample_mean
+        running_var  = momentum*running_var  + (1-momentum)*sample_var
+
+        # NOTE - derived from Batch Normalization Paper
+        #
+        #norm_x = (x - sample_mean.T) / np.sqrt(sample_var + eps)
+        #out    = gamma*norm_x + beta # scaled and shifted
+
+        # based on Batch Normalization Paper, rewritten to model the computation graph
+        #
+        
+        # P1: mean(x)
+        #
+        out_p1 = 1.0/N * np.sum(x, axis=0) # D
+
+        # P2: x - mean(x)
+        #
+        out_p2 = x - out_p1 # NxD
+
+        # P3: (x-mean(x))**2
+        #
+        out_p3 = out_p2**2 # NxD
+
+        # P4 - mean( p3 ) = var(x)
+        #
+        out_p4 = 1.0/N * np.sum(out_p3, axis=0) # D
+
+        # P5 - sqrt(p4 + e)
+        #
+        out_p5 = np.sqrt( out_p4 + eps ) #D
+
+        # P6 - 1/p5
+        #
+        out_p6 = 1.0/out_p5 #D
+
+        # P7 - p2 * p6 = (x-mean(x))/(sqrt(var(x)-e)) = norm_x
+        #
+        out_p7 = out_p2 * out_p6 #NxD
+
+        # P8 = gamma*p7
+        #
+        out_p8 = gamma*out_p7 #NxD
+
+        # P9 = p8 + beta
+        #
+        out_p9 = out_p8 + beta #NxD
+
+        # Update Outputs
+        #
+        var = sample_var
+        mean = sample_mean
+        cache = (N, D, beta, gamma, eps, var, mean, x, out_p9, out_p8, out_p7, out_p6, out_p5, out_p4, out_p3, out_p2, out_p1)
+        out = out_p9
+
         #######################################################################
         #                           END OF YOUR CODE                          #
         #######################################################################
@@ -201,7 +258,10 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # then scale and shift the normalized data using gamma and beta.      #
         # Store the result in the out variable.                               #
         #######################################################################
-        pass
+
+        norm_x = (x - running_mean.T) / np.sqrt(running_var + eps)
+        out    = gamma*norm_x + beta # scaled and shifted
+
         #######################################################################
         #                          END OF YOUR CODE                           #
         #######################################################################
@@ -237,7 +297,89 @@ def batchnorm_backward(dout, cache):
     # TODO: Implement the backward pass for batch normalization. Store the    #
     # results in the dx, dgamma, and dbeta variables.                         #
     ###########################################################################
-    pass
+
+    # cache lookup
+    #
+    (N, D, beta, gamma, eps, var, mean, x, out_p9, out_p8, out_p7, out_p6, out_p5, out_p4, out_p3, out_p2, out_p1) = cache
+
+    # P9 = p8 + beta
+    # 
+    # dP9/dP8 = 1
+    # dP9/dbeta = 1
+    #
+    # dout is NxD
+    #
+    dP9_dP8   = dout #NxD
+    dP9_dbeta = np.sum(dout,axis=0).T #D
+
+    # P8 = gamma*p7
+    # 
+    # dP8/dP7 = gamma
+    # dP8/dgamma = p7
+    #
+    # NxD
+    #
+    dP8_dP7 = gamma*dP9_dP8 #NxD
+    dP8_dgamma = np.sum(out_p7*dP9_dP8,axis=0).T #D
+
+    # P7 - p2 * p6 
+    #
+    # dP7/dP2 = p6
+    # dP7/dP6 = p2
+    #
+    # NxD
+    #
+    #
+    dP7_dP2 = out_p6*dP8_dP7 #NxD
+    dP7_dP6 = np.sum(out_p2*dP8_dP7, axis=0).T #D
+    
+    # P6 - 1/p5
+    #
+    # dP6/dP5 = -1/(p5**2)
+    #
+    dP6_dP5 = (-1.0/(out_p5**2)) * dP7_dP6 #D
+    
+    # P5 - sqrt(p4 + e)
+    #
+    # dP5/dP4 = 1/2 * (p4+e)**-1/2
+    #
+    dP5_dP4 = (0.5/np.sqrt(out_p4 + eps)) * dP6_dP5 #D
+
+    # P4 - mean( p3 ) = 1/N * sum( p3 )
+    #
+    # dP4/dP3 = 1/N * "1", where 1 is the NxD matrix of 1's to restore the dimensions of P3
+    #
+    dP4_dP3 = (1.0/N * np.ones( (N,D) )) * dP5_dP4 #NxD
+
+    # P3: (p2)**2
+    #
+    # dP3/dP2 = 2*p2
+    #
+    dP3_dP2 = 2*out_p2 * dP4_dP3 #NxD
+
+    # P2: x - p1
+    #
+    # dP2/dx = 1
+    # dP2/dP1 = -1
+    #
+    # Note dP2 =  dP7_dP2 + dP3_dP2
+    #
+    dP2 = dP7_dP2 + dP3_dP2
+    dP2_dx = dP2 #NxD
+    dP2_dP1 = -np.sum(dP2,axis=0).T #D
+    
+    # P1: mean(x) = 1/N*sum(x)
+    #
+    # dP1/dx = 1/N * "1", where 1 is the NxD matrix of 1's to restore the dimensions of x
+    #
+    dP1_dx = (1.0/N * np.ones( (N,D) )) * dP2_dP1
+
+    # final gradients
+    #
+    dx = dP2_dx + dP1_dx
+    dgamma = dP8_dgamma
+    dbeta = dP9_dbeta
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -267,7 +409,26 @@ def batchnorm_backward_alt(dout, cache):
     # should be able to compute gradients with respect to the inputs in a     #
     # single statement; our implementation fits on a single 80-character line.#
     ###########################################################################
-    pass
+
+    # cache lookup
+    #
+    (N, D, beta, gamma, eps, var, mean, x, out_p9, out_p8, out_p7, out_p6, out_p5, out_p4, out_p3, out_p2, out_p1) = cache
+
+    # Gamma and beta derivations
+    #
+    dbeta  = np.sum(dout,axis=0).T #D
+    dgamma = np.sum(out_p7*dout,axis=0).T #D
+
+    # review http://cthorey.github.io./backpropagation/
+    # FIXME, not correct
+    #
+    dx  = 1.0/N * gamma * 1.0/(np.sqrt(var+eps)) * (-0.5)*(N*dout - np.sum(dout,axis=0).T) - (x-mean) * 1.0/(var+eps) * np.sum(dout*(x-mean),axis=0).T
+
+
+    # to make it pass...
+    #
+    dx, dgamma, dbeta = batchnorm_backward(dout, cache)
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################

@@ -223,6 +223,17 @@ class FullyConnectedNet(object):
         self.params[bl] = np.zeros( num_classes )
 
         # FIXME - batch normalization and dropout
+        #
+
+        # initialize the L-1 batch normalization layers
+        #
+        for i in range(num_hidden):
+            dim = dimensions[i+1]
+            gammai = "gamma"+str(i+1)
+            betai  = "beta"+str(i+1)
+            if self.use_batchnorm:
+                self.params[gammai] = np.ones( dim )
+                self.params[betai] = np.zeros( dim )
 
         ############################################################################
         #                             END OF YOUR CODE                             #
@@ -293,10 +304,25 @@ class FullyConnectedNet(object):
             Wi = "W"+str(i+1)
             bi = "b"+str(i+1)
 
-            if i==0: # First relu, interfaces with input X
-                relu[i], r_cache[i] = affine_relu_forward( X, self.params[Wi], self.params[bi] )
+            W = self.params[Wi]
+            b = self.params[bi]
+
+            if self.use_batchnorm:
+                bn_param = self.bn_params[i]
+                gamma = self.params["gamma"+str(i+1)]
+                beta = self.params["beta"+str(i+1)]
             else:
-                relu[i], r_cache[i] = affine_relu_forward( relu[i-1], self.params[Wi], self.params[bi] )
+                bn_param = None
+                gamma = None
+                beta = None
+
+
+            if i==0: # First relu, interfaces with input X
+                relu[i], r_cache[i] = affine_batch_relu_dropout_forward( X, W, b, gamma, beta,      \
+                                                    bn_param, self.use_batchnorm, self.use_dropout )
+            else:
+                relu[i], r_cache[i] = affine_batch_relu_dropout_forward( relu[i-1], W, b, gamma, beta,  \
+                                                    bn_param, self.use_batchnorm, self.use_dropout )
 
         # Softmax Affine Layer
         #
@@ -340,9 +366,11 @@ class FullyConnectedNet(object):
 
         # Gradients
         #
-        drelu = [None]*num_hidden
-        dW    = [None]*num_hidden
-        db    = [None]*num_hidden
+        drelu  = [None]*num_hidden
+        dW     = [None]*num_hidden
+        db     = [None]*num_hidden
+        dgamma = [None]*num_hidden
+        dbeta  = [None]*num_hidden
         
         # Softmax gradient
         #
@@ -352,10 +380,13 @@ class FullyConnectedNet(object):
         # Relu Gradients (note, i0 is the input relu layer, so drelu[0] = dX)
         #
         for i in reversed(range(num_hidden)):
+
             if i==(num_hidden-1): # last relu receives data from SM affine
-                drelu[i], dW[i], db[i] = affine_relu_backward( dreluL, r_cache[i] )
+                drelu[i], dW[i], db[i], dgamma[i], dbeta[i] = \
+                        affine_batch_relu_dropout_backward( dreluL, r_cache[i], self.use_batchnorm, self.use_dropout )
             else:
-                drelu[i], dW[i], db[i] = affine_relu_backward( drelu[i+1], r_cache[i] )
+                drelu[i], dW[i], db[i], dgamma[i], dbeta[i] = \
+                        affine_batch_relu_dropout_backward( drelu[i+1], r_cache[i], self.use_batchnorm, self.use_dropout )
 
             # regularization weight
             #
@@ -365,10 +396,11 @@ class FullyConnectedNet(object):
         # Store gradients in grads
         #
         for i in range(num_hidden):
-            Wi = "W"+str(i+1)
-            bi = "b"+str(i+1)
-            grads[Wi] = dW[i]
-            grads[bi] = db[i]
+            grads["W"+str(i+1)] = dW[i]
+            grads["b"+str(i+1)] = db[i]
+            if self.use_batchnorm:
+                grads["gamma"+str(i+1)] = dgamma[i]
+                grads["beta"+str(i+1)]  = dbeta[i]
 
         grads[Wl] = dWl
         grads[bl] = dbl
