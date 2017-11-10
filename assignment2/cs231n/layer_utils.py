@@ -30,7 +30,7 @@ def affine_relu_backward(dout, cache):
     dx, dw, db = affine_backward(da, fc_cache)
     return dx, dw, db
 
-def affine_batch_relu_dropout_forward(x, w, b, gamma, beta, bn_params, use_batch, use_drop):
+def affine_batch_relu_dropout_forward(x, w, b, gamma, beta, bn_params, dropout_params, use_batch, use_drop):
     """
     Convenience layer that performs affine - Batch - ReLU
 
@@ -50,11 +50,15 @@ def affine_batch_relu_dropout_forward(x, w, b, gamma, beta, bn_params, use_batch
         bn = a
         bn_cache = None
 
-    out, relu_cache = relu_forward(bn)
+    relu, relu_cache = relu_forward(bn)
 
-    # FIXME - use dropout
+    if use_drop:
+        out, drop_cache = dropout_forward( relu, dropout_params)
+    else:
+        out = relu
+        drop_cache = None
 
-    cache = (fc_cache, bn_cache, relu_cache)
+    cache = (fc_cache, bn_cache, relu_cache, drop_cache)
     return out, cache
 
 def affine_batch_relu_dropout_backward(dout, cache, use_batch, use_drop):
@@ -62,9 +66,14 @@ def affine_batch_relu_dropout_backward(dout, cache, use_batch, use_drop):
     Backward pass for the affine-batch-relu convenience layer
     """
 
-    # FIXME - use dropout
-    fc_cache, bn_cache, relu_cache = cache
-    da = relu_backward(dout, relu_cache)
+    fc_cache, bn_cache, relu_cache, drop_cache = cache
+
+    if use_drop:
+        ddrop = dropout_backward(dout, drop_cache)
+    else:
+        ddrop = dout
+
+    da = relu_backward(ddrop, relu_cache)
 
     if use_batch:
         dbn, dgamma, dbeta = batchnorm_backward(da, bn_cache)

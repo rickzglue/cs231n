@@ -222,9 +222,6 @@ class FullyConnectedNet(object):
         self.params[Wl] = np.random.normal( 0, weight_scale, (dimensions[num_hidden], num_classes) )
         self.params[bl] = np.zeros( num_classes )
 
-        # FIXME - batch normalization and dropout
-        #
-
         # initialize the L-1 batch normalization layers
         #
         for i in range(num_hidden):
@@ -316,13 +313,12 @@ class FullyConnectedNet(object):
                 gamma = None
                 beta = None
 
-
             if i==0: # First relu, interfaces with input X
                 relu[i], r_cache[i] = affine_batch_relu_dropout_forward( X, W, b, gamma, beta,      \
-                                                    bn_param, self.use_batchnorm, self.use_dropout )
+                                                    bn_param, self.dropout_param, self.use_batchnorm, self.use_dropout )
             else:
                 relu[i], r_cache[i] = affine_batch_relu_dropout_forward( relu[i-1], W, b, gamma, beta,  \
-                                                    bn_param, self.use_batchnorm, self.use_dropout )
+                                                    bn_param, self.dropout_param, self.use_batchnorm, self.use_dropout )
 
         # Softmax Affine Layer
         #
