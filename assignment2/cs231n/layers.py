@@ -4,7 +4,41 @@ import numpy as np
 
 def affine_forward(x, w, b):
     """
-    Computes the forward pass for an affine (fully-connected) layer.
+    Computes the forward pass for an affine (fully-connected) layer.e
+
+    Hp = int(1 + (H + 2*pad - HH)/stride)
+    Wp = int(1 + (W + 2*pad - WW)/stride)
+
+    # create padded dx
+    # 
+    dx_pad = np.zeros( (N,C,H+2*pad, W+2*pad) )
+
+    # Indexes for HH, WW
+    #
+    oddHH  = (HH % 2) == 1
+    initHH = int(HH/2) - pad       # even index
+    if oddHH:
+        initHH += 1
+    endHH  = H + 2*pad - int(HH/2)   # same for even/odd
+
+    offHH_L = int(HH/2)  # odd left offset
+    if not oddHH:
+        offHH_L -= 1 # even offset
+    offHH_R = int(HH/2)+1  # same for even/odd
+
+    oddWW  = (WW % 2) == 1
+    initWW = int(WW/2) - pad
+    if oddWW:
+        initWW += 1
+    endWW  = W + 2*pad - int(WW/2)
+
+    offWW_L = int(WW/2)  # odd left offset
+    if not oddWW:
+        offWW_L -= 1 # even offset
+    offWW_R = int(WW/2)+1  # same for even/odd
+
+    # Naive implementation - elementwise mult and sum at each output point
+
 
     The input x has shape (N, d_1, ..., d_k) and contains a minibatch of N
     examples, where each example x[i] has shape (d_1, ..., d_k). We will
@@ -531,7 +565,7 @@ def conv_forward_naive(x, w, b, conv_param):
 
     The input consists of N data points, each with C channels, height H and
     width W. We convolve each input with F different filters, where each filter
-    spans all C channels and has height HH and width HH.
+    spans all C channels and has height HH and width WW.
 
     Input:
     - x: Input data of shape (N, C, H, W)
@@ -553,7 +587,69 @@ def conv_forward_naive(x, w, b, conv_param):
     # TODO: Implement the convolutional forward pass.                         #
     # Hint: you can use the function np.pad for padding.                      #
     ###########################################################################
-    pass
+    stride = conv_param['stride']
+    pad    = conv_param['pad']
+    N, C, H, W   = x.shape
+    F, _, HH, WW = w.shape
+
+    Hp = int(1 + (H + 2*pad - HH)/stride)
+    Wp = int(1 + (W + 2*pad - WW)/stride)
+
+    # Only pad H and W dimensions of x
+    #
+    x_pad = np.pad(x, ((0,0), (0,0), (pad,pad), (pad,pad)), 'constant', constant_values=0)
+
+    # Indexes for HH, WW
+    #
+    oddHH  = (HH % 2) == 1
+    initHH = int(HH/2) - pad       # even index
+    if oddHH:
+        initHH += 1
+    endHH  = H + 2*pad - int(HH/2)   # same for even/odd
+
+    offHH_L = int(HH/2)  # odd left offset
+    if not oddHH:
+        offHH_L -= 1 # even offset
+    offHH_R = int(HH/2)+1  # same for even/odd
+
+    oddWW  = (WW % 2) == 1
+    initWW = int(WW/2) - pad
+    if oddWW:
+        initWW += 1
+    endWW  = W + 2*pad - int(WW/2)
+
+    offWW_L = int(WW/2)  # odd left offset
+    if not oddWW:
+        offWW_L -= 1 # even offset
+    offWW_R = int(WW/2)+1  # same for even/odd
+
+    # Initialize output volume V
+    #
+    V = np.zeros( (N,F,Hp,Wp) )
+
+    # Naive implementation - elementwise mult and sum at each output point
+    #
+    hpi = 0
+    wpi = 0
+    for ni in range(N):
+        for fi in range(F):
+            for hi in range(initHH,endHH,stride): 
+                for wi in range(initWW,endWW,stride): 
+                    hil = hi-offHH_L
+                    hir = hi+offHH_R
+                    wil = wi-offWW_L
+                    wir = wi+offWW_R
+
+                    V[ni,fi,hpi,wpi] = np.sum(x_pad[ni, :, hil:hir, wil:wir]*w[fi, :, :, :]) + b[fi]
+
+                    wpi += 1
+                hpi += 1
+                wpi  = 0
+            hpi = 0
+            wpi = 0
+
+    out = V
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -578,7 +674,79 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
-    pass
+    x, w, b, conv_param = cache
+    stride = conv_param['stride']
+    pad    = conv_param['pad']
+    N, C, H, W   = x.shape
+    F, _, HH, WW = w.shape
+
+    Hp = int(1 + (H + 2*pad - HH)/stride)
+    Wp = int(1 + (W + 2*pad - WW)/stride)
+
+    # create padded dx
+    # 
+    x_pad  = np.pad(x, ((0,0), (0,0), (pad,pad), (pad,pad)), 'constant', constant_values=0)
+    dx_pad = np.zeros( (N,C,H+2*pad, W+2*pad) )
+    dw     = np.zeros( (F,C,HH,WW) )
+    db     = np.zeros(  F )
+
+    # Indexes for HH, WW
+    #
+    oddHH  = (HH % 2) == 1
+    initHH = int(HH/2) - pad       # even index
+    if oddHH:
+        initHH += 1
+    endHH  = H + 2*pad - int(HH/2)   # same for even/odd
+
+    offHH_L = int(HH/2)  # odd left offset
+    if not oddHH:
+        offHH_L -= 1 # even offset
+    offHH_R = int(HH/2)+1  # same for even/odd
+
+    oddWW  = (WW % 2) == 1
+    initWW = int(WW/2) - pad
+    if oddWW:
+        initWW += 1
+    endWW  = W + 2*pad - int(WW/2)
+
+    offWW_L = int(WW/2)  # odd left offset
+    if not oddWW:
+        offWW_L -= 1 # even offset
+    offWW_R = int(WW/2)+1  # same for even/odd
+
+    # Naive implementation - elementwise mult and sum at each output point
+    #
+    # Note - convolution is just multiplication and summation
+    #
+    hpi = 0
+    wpi = 0
+    for ni in range(N):
+        for fi in range(F):
+            for hi in range(initHH,endHH,stride):
+                for wi in range(initWW,endWW,stride): 
+                    hil = hi-offHH_L
+                    hir = hi+offHH_R
+                    wil = wi-offWW_L
+                    wir = wi+offWW_R
+
+                    dx_pad[ni,:,hil:hir,wil:wir] += w[fi,:,:,:]*dout[ni,fi,hpi,wpi]
+                    dw[fi,:,:,:] += x_pad[ni,:,hil:hir,wil:wir]*dout[ni,fi,hpi,wpi]
+
+                    wpi += 1
+                hpi += 1
+                wpi  = 0
+            hpi = 0
+            wpi = 0
+
+    # derive db
+    #
+    for fi in range(F):
+        db[fi] = np.sum( dout[:,fi,:,:] )
+
+    # remove pad
+    #
+    dx = dx_pad[:,:,pad:pad+H, pad:pad+W]
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -604,7 +772,38 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # TODO: Implement the max pooling forward pass                            #
     ###########################################################################
-    pass
+
+    N, C, H, W   = x.shape
+    HH = pool_param['pool_height']
+    WW = pool_param['pool_width']
+    stride = pool_param['stride']
+
+    H2 = int(1 + (H - HH)/stride)
+    W2 = int(1 + (W - WW)/stride)
+
+    # Initialize output volume V
+    #
+    V = np.zeros( (N,C,H2,W2) )
+
+    # Naive implementation - elementwise MAX at each output point
+    #
+    hpi = 0
+    wpi = 0
+    for ni in range(N):
+        for ci in range(C):
+            for hi in range(0,H,stride):
+                for wi in range(0,W,stride):
+            
+                    V[ni,ci,hpi,wpi] = np.max(x[ni, ci, hi:(hi+HH), wi:(wi+WW)])
+
+                    wpi += 1
+                hpi += 1
+                wpi  = 0
+            hpi = 0
+            wpi = 0
+
+    out = V
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
@@ -627,7 +826,35 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # TODO: Implement the max pooling backward pass                           #
     ###########################################################################
-    pass
+    x, pool_param = cache
+
+    N, C, H, W   = x.shape
+    _,_,H2,W2    = dout.shape
+    HH = pool_param['pool_height']
+    WW = pool_param['pool_width']
+    stride = pool_param['stride']
+
+    dx = np.zeros( (N,C,H,W) )
+
+    # Naive implementation - elementwise MAX derivative at each output point
+    #
+    hpi = 0
+    wpi = 0
+    for ni in range(N):
+        for ci in range(C):
+            for hi in range(0,H,stride):
+                for wi in range(0,W,stride):
+                    tmp = np.zeros( (HH, WW) )
+                    maxI, maxJ = np.unravel_index(x[ni,ci,hi:(hi+HH),wi:(wi+HH)].argmax(), (HH, WW))
+                    tmp[maxI,maxJ] = 1
+                    dx[ni, ci, hi:(hi+HH), wi:(wi+WW)] += tmp * dout[ni,ci,hpi,wpi]
+
+                    wpi += 1
+                hpi += 1
+                wpi  = 0
+            hpi = 0
+            wpi = 0
+
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
