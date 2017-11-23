@@ -137,7 +137,45 @@ class CaptioningRNN(object):
         # defined above to store loss and gradients; grads[k] should give the      #
         # gradients for self.params[k].                                            #
         ############################################################################
-        pass
+        
+        # Forward Pass
+        #
+        aff1, a_cache = affine_forward(features, W_proj, b_proj)
+        emb1, e_cache = word_embedding_forward(captions_in, W_embed)
+
+        if self.cell_type == 'rnn':
+            rnn1, r_cache = rnn_forward(emb1, aff1, Wx, Wh, b)
+        if self.cell_type == 'lstm':
+            rnn1, r_cache = lstm_forward(emb1, aff1, Wx, Wh, b)
+
+        vocab, v_cache = temporal_affine_forward(rnn1, W_vocab, b_vocab)
+        
+        # Loss Calculation - no regularization loss
+        #
+        data_loss, dvocab  = temporal_softmax_loss(vocab, captions_out, mask, verbose=False)
+        loss = data_loss
+
+        # Backward Pass
+        #
+        drnn, dW_vocab, db_vocab    = temporal_affine_backward(dvocab, v_cache)
+
+        if self.cell_type == 'rnn':
+            demb, daff, dWx, dWh, db    = rnn_backward(drnn, r_cache)
+        if self.cell_type == 'lstm':
+            demb, daff, dWx, dWh, db    = lstm_backward(drnn, r_cache)
+
+        dW_embed                    = word_embedding_backward(demb, e_cache)
+        dfeatures, dW_proj, db_proj = affine_backward(daff, a_cache)
+
+        grads['W_vocab'] = dW_vocab
+        grads['b_vocab'] = db_vocab
+        grads['Wx']      = dWx
+        grads['Wh']      = dWh
+        grads['b']       = db
+        grads['W_embed'] = dW_embed
+        grads['W_proj']  = dW_proj
+        grads['b_proj']  = db_proj
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
@@ -199,7 +237,45 @@ class CaptioningRNN(object):
         # functions; you'll need to call rnn_step_forward or lstm_step_forward in #
         # a loop.                                                                 #
         ###########################################################################
-        pass
+
+        # initial hidden state and learned word
+        #
+        prev_h, h_cache = affine_forward(features, W_proj, b_proj)
+        prev_word = self._start * np.ones( N, dtype=np.int32 )
+
+        # for lstm - initial cell state is 0
+        #
+        prev_c = np.zeros_like( prev_h )
+
+        for ti in range(max_length):
+
+            # 1 - embed the previous word 
+            #
+            # emb is Nx1xW
+            #
+            emb, e_cache = word_embedding_forward(prev_word, W_embed)
+
+            # 2 - rnn/lstm step
+            #
+            if self.cell_type == 'rnn':
+                next_h, r_cache = rnn_step_forward(emb, prev_h, Wx, Wh, b)
+            if self.cell_type == 'lstm':
+                next_h, next_c, r_cache = lstm_step_forward(emb, prev_h, prev_c, Wx, Wh, b)
+                prev_c = next_c
+
+            # 3 - get vocab scores
+            #
+            # single timestep - do not use temporal affine, just regular affine
+            #
+            vocab, v_cache = affine_forward(next_h, W_vocab, b_vocab)
+
+            # 4 - get highest score as next word
+            #
+            captions[:,ti] = np.argmax( vocab, axis=1 )
+
+            prev_h    = next_h
+            prev_word = captions[:,ti]
+
         ############################################################################
         #                             END OF YOUR CODE                             #
         ############################################################################
